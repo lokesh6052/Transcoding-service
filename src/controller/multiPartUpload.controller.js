@@ -109,6 +109,19 @@ export const uploadChunk = asyncHandler(async (req, res) => {
 		await ensureBucket(bucketName);
 		console.log("Bucket Name:", bucketName, typeof bucketName);
 
+		// Check if the chunk size is at least 5 MB
+		if (req.file.buffer.length < 5 * 1024 * 1024) {
+			return res
+				.status(400)
+				.json(
+					new ApiErrors(
+						400,
+						"Chunk size must be at least 5 MB",
+						"Your proposed upload is smaller than the minimum allowed object size."
+					)
+				);
+		}
+
 		const partParams = {
 			Bucket: bucketName,
 			Key: fileName,
@@ -141,29 +154,80 @@ export const uploadChunk = asyncHandler(async (req, res) => {
 	}
 });
 
-// Function to list objects in the bucket
-export const listObjects = asyncHandler(async (req, res) => {
-	const bucketName = process.env.BUCKET_NAME;
-	console.log("Listing objects in bucket:", bucketName);
-
+// Function of Complete the multi-part upload
+export const completeUpload = asyncHandler(async (req, res) => {
 	try {
-		const params = {
+		console.log("Completing the upload function invoked");
+		const { fileName, totalChunks, uploadId, title, description, author } =
+			req.body;
+
+		console.log("Key:", fileName);
+		console.log("Upload ID:", uploadId);
+		// console.log("Uploaded Parts:", uploadedParts.at(0));
+
+		const bucketName = process.env.BUCKET_NAME;
+
+		const uploadedParts = [];
+
+		// Build uploadParts array from request body
+		for (let i = 0; i < totalChunks; i++) {
+			uploadedParts.push({ PartNumber: i + 1, ETag: req.body[`part${i + 1}`] });
+		}
+
+		console.log("Key:", fileName);
+		console.log("Upload ID:", uploadId);
+		console.log("Uploaded Parts:", uploadedParts);
+
+		const completeParams = {
 			Bucket: bucketName,
+			Key: fileName,
+			UploadId: uploadId,
 		};
 
-		const data = await s3.listObjectsV2(params).promise();
-		console.log("Objects in bucket:", data);
+		// Listing parts using promise
+		const data = await s3.listParts(completeParams).promise();
+		console.log("Data-----", data);
 
-		return res
-			.status(200)
-			.json(new ApiResponses(200, "Objects listed successfully", data));
+		const parts = data.Parts.map((part) => ({
+			ETag: part.ETag,
+			PartNumber: part.PartNumber,
+		}));
+		console.log("Parts-----", parts);
+
+		completeParams.MultipartUpload = {
+			Parts: parts,
+		};
+		console.log(
+			"Complete Params:",
+			completeParams,
+			completeParams.MultipartUpload.Parts
+		);
+
+		// Completing multipart upload using promise
+		const uploadResult = await s3
+			.completeMultipartUpload(completeParams)
+			.promise();
+
+		console.log("data----- ", uploadResult);
+		// await video.create({
+		// 	title,
+		// 	description,
+		// 	author,
+		// 	url: uploadResult.Location,
+		// });
+
+		return res.status(200).json(
+			new ApiResponses(200, "multipart upload completed successfully", {
+				uploadResult,
+			})
+		);
 	} catch (error) {
 		return res
-			.status(500)
+			.status(400)
 			.json(
 				new ApiErrors(
-					500,
-					"something wrong in listing the objects",
+					400,
+					"Something went wrong in the completing the upload",
 					error.message,
 					error
 				)

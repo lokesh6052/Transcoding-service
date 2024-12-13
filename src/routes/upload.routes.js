@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
+	completeUpload,
 	intiatialzedUpload,
-	listObjects,
 	uploadChunk,
 } from "../controller/multiPartUpload.controller.js";
 import multer from "multer";
@@ -14,5 +14,5 @@ router.post("/intialized", upload.none(), intiatialzedUpload);
 
 router.post("/chunks", upload.single("file"), uploadChunk);
 
-router.get("/list-objects", listObjects);
+router.post("/complete", completeUpload);
 export default router;
